@@ -212,11 +212,30 @@ def build_prompt(template: str, rollout_item: dict, expert_next_state: str) -> s
 #  API 调用封装
 # --------------------------------------------------------------------------- #
 
+def create_llm_client(api_key: str, api_base: str = DEFAULT_API_BASE):
+    """
+    创建 OpenAI 兼容客户端（线程安全，可在并发调用中复用）。
+
+    参数:
+        api_key:  API 密钥
+        api_base: API 基础 URL
+
+    返回:
+        OpenAI 客户端实例
+    """
+    try:
+        from openai import OpenAI
+    except ImportError:
+        raise ImportError(
+            "缺少 openai 包，请执行: pip install openai>=1.0.0"
+        )
+    return OpenAI(api_key=api_key, base_url=api_base)
+
+
 def call_llm_api(
     prompt: str,
-    api_key: str,
+    client,
     model: str = DEFAULT_MODEL,
-    api_base: str = DEFAULT_API_BASE,
     max_tokens: int = DEFAULT_MAX_TOKENS,
     temperature: float = DEFAULT_TEMPERATURE,
     max_retries: int = DEFAULT_MAX_RETRIES,
@@ -231,9 +250,8 @@ def call_llm_api(
 
     参数:
         prompt:      完整的用户 prompt（已填充情境、动作等信息）
-        api_key:     API 密钥
+        client:      OpenAI 兼容客户端实例（由 create_llm_client 创建，可复用）
         model:       模型名称（如 "gpt-4o"、"deepseek-chat"）
-        api_base:    API 基础 URL
         max_tokens:  最大生成 token 数
         temperature: 采样温度（0.0~1.0；低温度保证内容稳定，默认 0.3）
         max_retries: 失败重试次数上限
@@ -242,16 +260,6 @@ def call_llm_api(
     返回:
         模型生成的反思文本字符串，失败时返回 None
     """
-    # 延迟导入，避免未安装 openai 时导入失败
-    try:
-        from openai import OpenAI
-    except ImportError:
-        raise ImportError(
-            "缺少 openai 包，请执行: pip install openai>=1.0.0"
-        )
-
-    client = OpenAI(api_key=api_key, base_url=api_base)
-
     # system 消息：简短角色描述，节省 token
     system_msg = (
         "You are an expert AI assistant that analyzes decision-making in "
@@ -311,7 +319,8 @@ def generate_d_refl(
 
     参数:
         rollout_file: D_rollout.json 的路径
-        dexpert_file: 专家轨迹 JSON 的路径
+        dexpert_file: 专家轨迹 JSON 的路径（可选；若 D_rollout 条目已包含
+                      expert_next_state 字段则无需此文件）
         output_file:  输出 D_refl.json 的路径
         api_key:      API 密钥
         model:        强模型名称
@@ -344,15 +353,26 @@ def generate_d_refl(
     rollout_data: list = load_json(rollout_file)
     logger.info("共 %d 条 rollout 记录", len(rollout_data))
 
-    logger.info("加载专家轨迹数据: %s", dexpert_file)
-    dexpert_data: list = load_json(dexpert_file)
-    logger.info("共 %d 条专家轨迹记录", len(dexpert_data))
+    # ------------------------------------------------------------------ #
+    #  构建专家后继状态索引（后备，当 D_rollout 条目缺少 expert_next_state 时使用）
+    # ------------------------------------------------------------------ #
+    expert_next_index: dict = {}
+    if os.path.exists(dexpert_file):
+        logger.info("加载专家轨迹数据: %s", dexpert_file)
+        dexpert_data: list = load_json(dexpert_file)
+        logger.info("共 %d 条专家轨迹记录", len(dexpert_data))
+        expert_next_index = build_expert_next_state_index(dexpert_data)
+        logger.info("构建专家后继状态索引完毕，共 %d 条", len(expert_next_index))
+    else:
+        logger.warning(
+            "专家轨迹文件不存在: %s，将仅依赖 D_rollout 中的 expert_next_state 字段",
+            dexpert_file,
+        )
 
     # ------------------------------------------------------------------ #
-    #  构建专家后继状态索引
+    #  创建 API 客户端（复用同一实例，避免每次调用重建连接）
     # ------------------------------------------------------------------ #
-    expert_next_index = build_expert_next_state_index(dexpert_data)
-    logger.info("构建专家后继状态索引完毕，共 %d 条", len(expert_next_index))
+    client = create_llm_client(api_key=api_key, api_base=api_base)
 
     # ------------------------------------------------------------------ #
     #  断点续传：加载已有结果，跳过已完成条目
@@ -380,21 +400,26 @@ def generate_d_refl(
         if entry_id in done_ids:
             logger.debug("跳过已完成条目: %s", entry_id)
             continue
-        # 从 dexpert 索引中查找专家后继状态 s_{i+1}（prompt 中的 Expected Outcome）。
-        # 轨迹最后一步在索引中固定为 "success"，中间步骤取下一步的 state_si。
+
+        # 查找专家后继状态 s_{i+1}（prompt 中的 Expected Outcome）：
+        #   优先使用 D_rollout 条目自带的 expert_next_state 字段（新版数据）；
+        #   若不存在，则回退到从 dexpert 索引中查找（旧版兼容）。
         # 注意：{State 1}（next_state_sji）始终来自 D_rollout，与此处无关。
-        task_id = item["task_id"]
-        step = item["step"]
-        expert_next = expert_next_index.get((task_id, step))
+        expert_next = item.get("expert_next_state")
+        if expert_next is None:
+            task_id = item["task_id"]
+            step = item["step"]
+            expert_next = expert_next_index.get((task_id, step))
         if expert_next is None:
             logger.warning(
                 "条目 %s 找不到专家后继状态（task_id=%s, step=%d），使用占位文本",
-                entry_id, task_id, step,
+                entry_id, item.get("task_id", ""), item.get("step", -1),
             )
             expert_next = (
                 "[Expert action leads to task completion / no further state recorded]"
             )
             skipped_no_next_state += 1
+
         prompt = build_prompt(TEMPLATE, item, expert_next)
         pending.append((item, expert_next, prompt))
 
@@ -416,9 +441,8 @@ def generate_d_refl(
         )
         text = call_llm_api(
             prompt=prompt,
-            api_key=api_key,
+            client=client,
             model=model,
-            api_base=api_base,
             max_tokens=max_tokens,
             temperature=temperature,
             max_retries=max_retries,
@@ -443,7 +467,12 @@ def generate_d_refl(
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_map = {executor.submit(_call_one, args): args[0]["id"] for args in pending}
         for future in as_completed(future_map):
-            entry_id, entry = future.result()
+            try:
+                entry_id, entry = future.result()
+            except Exception:
+                fid = future_map.get(future, "<unknown>")
+                logger.error("条目 %s 处理时发生异常，跳过", fid, exc_info=True)
+                continue
             result_map[entry_id] = entry
             completed_count += 1
             # 每完成 10 条自动保存一次（防止意外中断丢失进度）

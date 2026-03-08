@@ -80,7 +80,7 @@ D_reflection/
   },
   "admissible_actions": ["go to cabinet 1", "go to coffeemachine 1", "..."],
   "expert_action_ai": "go to coffeemachine 1",
-  "expert_next_state": "You have taken the action 1: 'go to coffeemachine 1' You are now at step 2 and...",
+  "expert_next_state": "(可选) You have taken the action 1: 'go to coffeemachine 1' You are now at step 2 and...",
   "alternative_action_j": "go to countertop 1",
   "next_state_sji": "You have taken the action 1: 'go to countertop 1'...",
   "gamefile": ["/path/to/game.tw-pddl"],
@@ -88,7 +88,7 @@ D_reflection/
 }
 ```
 
-> **说明**：`expert_next_state` 字段由 D_rollout 生成阶段直接写入，无需在本阶段再从 `dexpert_test_100.json` 中查找。对于轨迹最后一步，该字段固定为 `"success"`（专家动作已完成任务）。
+> **说明**：`expert_next_state` 字段为可选项。若 D_rollout 条目中包含此字段（新版数据），脚本将直接使用；否则自动回退到从 `dexpert_test_100.json` 中构建索引查找（旧版兼容）。对于轨迹最后一步，该字段固定为 `"success"`（专家动作已完成任务）。
 
 ### 输出：D_refl.json
 
