@@ -244,7 +244,7 @@ python3 agent_system/environments/env_package/alfworld/data_generation/D_reflect
 |--------|---------|
 | `{Situation Description}` | `state_si.current_state` |
 | `{Expert Action}` | `expert_action_ai` |
-| `{Future State of Expert Action}` | 专家动作的结果状态 s_{i+1}（从专家轨迹推导） |
+| `{Future State of Expert Action}` | 专家后继状态 s_{i+1}（Expected Outcome，从专家轨迹推导） |
 | `{Alt Action 1}` | `alternative_action_j` |
 | `{State 1}` | `next_state_sji` |
 
