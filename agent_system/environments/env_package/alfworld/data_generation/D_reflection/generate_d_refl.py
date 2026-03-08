@@ -42,7 +42,7 @@ import time
 import logging
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Optional
+from typing import Any, Optional
 from collections import defaultdict
 
 # --------------------------------------------------------------------------- #
@@ -234,7 +234,7 @@ def create_llm_client(api_key: str, api_base: str = DEFAULT_API_BASE):
 
 def call_llm_api(
     prompt: str,
-    client,
+    client: Any,
     model: str = DEFAULT_MODEL,
     max_tokens: int = DEFAULT_MAX_TOKENS,
     temperature: float = DEFAULT_TEMPERATURE,
