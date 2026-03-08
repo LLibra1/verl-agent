@@ -319,8 +319,7 @@ def generate_d_refl(
 
     参数:
         rollout_file: D_rollout.json 的路径
-        dexpert_file: 专家轨迹 JSON 的路径（可选；若 D_rollout 条目已包含
-                      expert_next_state 字段则无需此文件）
+        dexpert_file: 专家轨迹 JSON 的路径（用于构建专家后继状态索引）
         output_file:  输出 D_refl.json 的路径
         api_key:      API 密钥
         model:        强模型名称
@@ -354,20 +353,13 @@ def generate_d_refl(
     logger.info("共 %d 条 rollout 记录", len(rollout_data))
 
     # ------------------------------------------------------------------ #
-    #  构建专家后继状态索引（后备，当 D_rollout 条目缺少 expert_next_state 时使用）
+    #  构建专家后继状态索引（从 dexpert 获取 Expected Outcome si+1）
     # ------------------------------------------------------------------ #
-    expert_next_index: dict = {}
-    if os.path.exists(dexpert_file):
-        logger.info("加载专家轨迹数据: %s", dexpert_file)
-        dexpert_data: list = load_json(dexpert_file)
-        logger.info("共 %d 条专家轨迹记录", len(dexpert_data))
-        expert_next_index = build_expert_next_state_index(dexpert_data)
-        logger.info("构建专家后继状态索引完毕，共 %d 条", len(expert_next_index))
-    else:
-        logger.warning(
-            "专家轨迹文件不存在: %s，将仅依赖 D_rollout 中的 expert_next_state 字段",
-            dexpert_file,
-        )
+    logger.info("加载专家轨迹数据: %s", dexpert_file)
+    dexpert_data: list = load_json(dexpert_file)
+    logger.info("共 %d 条专家轨迹记录", len(dexpert_data))
+    expert_next_index = build_expert_next_state_index(dexpert_data)
+    logger.info("构建专家后继状态索引完毕，共 %d 条", len(expert_next_index))
 
     # ------------------------------------------------------------------ #
     #  创建 API 客户端（复用同一实例，避免每次调用重建连接）
@@ -401,15 +393,12 @@ def generate_d_refl(
             logger.debug("跳过已完成条目: %s", entry_id)
             continue
 
-        # 查找专家后继状态 s_{i+1}（prompt 中的 Expected Outcome）：
-        #   优先使用 D_rollout 条目自带的 expert_next_state 字段（新版数据）；
-        #   若不存在，则回退到从 dexpert 索引中查找（旧版兼容）。
-        # 注意：{State 1}（next_state_sji）始终来自 D_rollout，与此处无关。
-        expert_next = item.get("expert_next_state")
-        if expert_next is None:
-            task_id = item["task_id"]
-            step = item["step"]
-            expert_next = expert_next_index.get((task_id, step))
+        # 从 dexpert 索引中查找专家后继状态 s_{i+1}（prompt 中的 Expected Outcome）。
+        # 轨迹最后一步在索引中固定为 "success"，中间步骤取下一步的 state_si。
+        # 注意：{State 1}（next_state_sji）始终来自 D_rollout，与此处无关，不受最后一步影响。
+        task_id = item["task_id"]
+        step = item["step"]
+        expert_next = expert_next_index.get((task_id, step))
         if expert_next is None:
             logger.warning(
                 "条目 %s 找不到专家后继状态（task_id=%s, step=%d），使用占位文本",

@@ -31,20 +31,21 @@
 ### 数据流
 
 ```
-D_rollout.json  ──（含 expert_next_state 字段）────────────────────────┐
-                                                                        ▼
-dexpert_test_100.json  ──→  构建后备索引（兼容旧版 D_rollout 数据）  ──→  填充 prompt
-                                                                        │
-reflection_prompt.py  ──────────────────────────────────────────────────┘
-                                                                        │
-                                                         强模型 API 调用
-                                                                        │
-                                                                        ▼
-                                                               D_refl.json
+D_rollout.json  ──────────────────────────────────────────────────────┐
+                                                                       ▼
+dexpert_test_100.json  ──→  构建专家后继状态索引（Expected Outcome）  ──→  填充 prompt
+                                                                       │
+reflection_prompt.py  ────────────────────────────────────────────────┘
+                                                                       │
+                                                        强模型 API 调用
+                                                                       │
+                                                                       ▼
+                                                              D_refl.json
 ```
 
-> **注**：若 D_rollout 条目中已包含 `expert_next_state` 字段（新版），则直接使用；
-> 否则回退到从 `dexpert_test_100.json` 构建的索引中查找（旧版兼容）。
+> **注**：专家后继状态 s_{i+1}（Expected Outcome）始终从 `dexpert_test_100.json` 构建的索引中获取。
+> 对于轨迹最后一步（step+1 不存在），专家动作已完成任务，Expected Outcome 固定为 `"success"`。
+> 替代动作的后继状态 `{State 1}`（即 D_rollout 中的 `next_state_sji`）始终存在，不受最后一步影响。
 
 ---
 
@@ -80,7 +81,6 @@ D_reflection/
   },
   "admissible_actions": ["go to cabinet 1", "go to coffeemachine 1", "..."],
   "expert_action_ai": "go to coffeemachine 1",
-  "expert_next_state": "(可选) You have taken the action 1: 'go to coffeemachine 1' You are now at step 2 and...",
   "alternative_action_j": "go to countertop 1",
   "next_state_sji": "You have taken the action 1: 'go to countertop 1'...",
   "gamefile": ["/path/to/game.tw-pddl"],
@@ -88,7 +88,7 @@ D_reflection/
 }
 ```
 
-> **说明**：`expert_next_state` 字段为可选项。若 D_rollout 条目中包含此字段（新版数据），脚本将直接使用；否则自动回退到从 `dexpert_test_100.json` 中构建索引查找（旧版兼容）。对于轨迹最后一步，该字段固定为 `"success"`（专家动作已完成任务）。
+> **说明**：专家后继状态（Expected Outcome si+1）由脚本从 `dexpert_test_100.json` 自动推导获取，无需在 D_rollout 中提供。对于轨迹最后一步，Expected Outcome 固定为 `"success"`（专家动作已完成任务）。`next_state_sji`（替代动作的后继状态，对应 prompt 中的 `{State 1}`）始终存在，不受最后一步影响。
 
 ### 输出：D_refl.json
 
@@ -271,12 +271,13 @@ python3 generate_d_refl.py --rollout_file /path/to/D_rollout.json \
     --api_key sk-xxxx
 ```
 
-### Q2：为什么部分条目的 `expert_next_state_si1` 是占位文本？
+### Q2：为什么部分条目的 `expert_next_state_si1` 是 "success"？
 
-对于专家轨迹的最后一步，没有下一步的状态记录，因此使用占位文本：
-`[Expert action leads to task completion / no further state recorded]`
+对于每条专家轨迹的最后一步（step+1 不存在），专家动作已使任务完成，因此
+Expected Outcome（si+1）固定为 `"success"`。这是正常行为，不影响数据质量。
 
-这种情况较少见，不影响整体数据质量。
+注意：替代动作的后继状态（prompt 中的 `{State 1}`，即 D_rollout 的 `next_state_sji`）
+始终存在，不受轨迹最后一步的影响。
 
 ### Q3：如何使用代理或自定义 API 端点？
 
