@@ -355,6 +355,12 @@ def generate_d_refl(
     # ------------------------------------------------------------------ #
     #  构建专家后继状态索引（从 dexpert 获取 Expected Outcome si+1）
     # ------------------------------------------------------------------ #
+    if not os.path.exists(dexpert_file):
+        raise FileNotFoundError(
+            f"专家轨迹文件不存在: {dexpert_file}\n"
+            "此文件为必需输入，用于构建专家后继状态索引（Expected Outcome si+1）。\n"
+            "请确认文件路径正确，或通过 --dexpert_file 参数指定。"
+        )
     logger.info("加载专家轨迹数据: %s", dexpert_file)
     dexpert_data: list = load_json(dexpert_file)
     logger.info("共 %d 条专家轨迹记录", len(dexpert_data))
