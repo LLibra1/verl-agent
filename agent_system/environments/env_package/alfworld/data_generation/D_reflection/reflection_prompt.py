@@ -16,23 +16,23 @@
 # --------------------- ALFWorld --------------------- #
 
 ALFWORLD_TEMPLATE = """
-You will be presented with a situation where you need to choose between multiple possible actions. Your task is to analyze the situation and provide reasoning about why we decide to take the expert action.  
+You will be presented with a situation where you need to choose between multiple possible actions. Your task is to analyze the situation and provide reasoning about why the expert action is preferable to the alternative action, based on the differences between their resulting states.  
 • Situation Description (si): {Situation Description}  
 • Expert Action (ai): {Expert Action}  
-• Expected Outcome (si+1): {Future State of Expert Action}  
+• Resulting State of Expert Action (si+1): {Future State of Expert Action}  
 • Alternative Actions: 
   1. Action a1  i : {Alt Action 1}, resulting state s1  i : {State 1} 
   2. Action a2  i : {Alt Action 2}, resulting state s2  i : {State 2} 
   3. . . .  
 Provide a detailed self-reflection as an internal monologue that demonstrates your reasoning process for the current situation. Your monologue should: 
-  1. Analyze the situation and the goal. 
-  2. Compare the possible actions, explaining why each may be less optimal. 
-  3. Justify why the expert action is most suitable, grounded in the expected outcome. 
-  4. Highlight any relevant clues, constraints, or consequences from the situation.  
+  1. Analyze the current situation and the goal. 
+  2. Compare the resulting states: examine what state the expert action leads to (si+1) versus what state the alternative action leads to (s1  i), and identify the key differences between these states. 
+  3. Based on these state differences, explain why the alternative action is less optimal — highlight potential limitations or inefficiencies revealed by its resulting state. 
+  4. Justify why the expert action is most suitable, grounded in the actual state transitions observed.  
 Guidelines:  
 • Stay strictly within the provided information. 
 • Avoid meta-commentary about being an AI. 
 • Use natural, step-by-step reasoning. 
-• Focus on logical decision-making. 
+• Focus on logical decision-making grounded in the observed state differences. 
 Output: Directly write the self-reflection monologue, no extra headings, disclaimers, or external notes.
 """

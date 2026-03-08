@@ -121,8 +121,8 @@ def build_expert_next_state_index(dexpert_data: list) -> dict:
     """
     从专家轨迹数据中构建 (task_id, step) -> 专家后继状态 的索引。
 
-    此索引仅用于填充 prompt 中的 {Future State of Expert Action}（即专家后继状态
-    s_{i+1}，对应论文符号 Expected Outcome si+1）。
+    此索引仅用于填充 prompt 中的 {Future State of Expert Action}（即专家动作的
+    结果状态 s_{i+1}，对应论文符号 Resulting State of Expert Action si+1）。
 
     注意：prompt 中 {State 1}（替代动作的后继状态）来自 D_rollout 的 next_state_sji
     字段，始终存在，与本索引无关，不受最后一步的影响。
