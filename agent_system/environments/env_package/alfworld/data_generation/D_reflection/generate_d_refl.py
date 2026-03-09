@@ -19,17 +19,18 @@ D_refl 反思数据生成脚本。
 基于论文：Agent learning via Early Experience（GiGPO）
 
 核心逻辑：
-    对于 D_rollout 中的每条记录 (s_i, a_j, s_j)，以及对应的专家动作 a_i 和
-    专家后继状态 s_{i+1}，利用强大语言模型生成链式思维（chain-of-thought）反思
-    c_j_i，解释为什么专家动作 a_i 优于替代动作 a_j，依据是它们产生的状态差异
-    （s_{i+1} vs s_j_i）。
+    D_rollout 中每个步骤包含 3 条替代动作记录 (s_i, a^k_i, s^k_i)（k=1,2,3），
+    以及对应的专家动作 a_i 和专家后继状态 s_{i+1}。脚本按 (task_id, step) 将
+    同一步骤的 3 条记录分为一组，一次性将 3 个替代动作及其后继状态填入 prompt，
+    调用强大语言模型生成一条链式思维（chain-of-thought）反思文本，解释为什么
+    专家动作 a_i 优于这 3 个替代动作。
 
 输入：
-    - D_rollout.json：包含 (s_i, a_i, a_j, s_j_i) 的样本列表
+    - D_rollout.json：包含 (s_i, a_i, a^k_i, s^k_i) 的样本列表，每步 3 条记录
     - dexpert_test_100.json：专家轨迹数据，用于查找专家后继状态 s_{i+1}
 
 输出：
-    - D_refl.json：包含反思文本 reflection_j 的数据集
+    - D_refl.json：每步一条反思记录，包含 3 个替代动作和一条反思文本
 
 路径说明：
     - 输入/输出路径已内置在脚本中，无需通过命令行参数传入
@@ -124,7 +125,7 @@ def build_expert_next_state_index(dexpert_data: list) -> dict:
     此索引仅用于填充 prompt 中的 {Future State of Expert Action}（即专家后继状态
     s_{i+1}，对应模板中的 Expected Outcome si+1）。
 
-    注意：prompt 中 {State 1}（替代动作的后继状态）来自 D_rollout 的 next_state_sji
+    注意：prompt 中 {State k}（替代动作的后继状态）来自 D_rollout 的 next_state_sji
     字段，始终存在，与本索引无关，不受最后一步的影响。
 
     专家轨迹第 step 步的后继状态 s_{i+1} 等于**同一轨迹**第 step+1 步的 state_si。
@@ -160,52 +161,47 @@ def build_expert_next_state_index(dexpert_data: list) -> dict:
     return next_state_index
 
 
-def build_prompt(template: str, rollout_item: dict, expert_next_state: str) -> str:
+def build_prompt(
+    template: str,
+    alternatives: list,
+    situation: str,
+    expert_action: str,
+    expert_next_state: str,
+) -> str:
     """
-    将 D_rollout 条目的字段填入 reflection_prompt.py 中定义的模板。
+    将同一步骤的 3 个替代动作及其他字段填入 prompt 模板。
+
+    D_rollout 中每步包含 3 条记录（rollout001~003），按 (task_id, step) 分组后，
+    3 个替代动作一次性填入模板的 {Alt Action 1}~{Alt Action 3} 占位符。
 
     模板占位符与字段的对应关系：
         {Situation Description}          <- state_si.current_state
         {Expert Action}                  <- expert_action_ai
         {Future State of Expert Action}  <- expert_next_state（由 dexpert 推导）
-        {Alt Action 1}                   <- alternative_action_j
-        {State 1}                        <- next_state_sji
-        {Alt Action 2} / {State 2} 等    <- 当前 D_rollout 每条只有一个替代动作，
-                                            多余占位符会被清除
+        {Alt Action k}                   <- 第 k 个替代动作（k=1,2,3）
+        {State k}                        <- 第 k 个替代动作的后继状态（k=1,2,3）
 
     参数:
         template:          ALFWORLD_TEMPLATE 字符串
-        rollout_item:      D_rollout 中的单条记录
+        alternatives:      长度为 3 的列表，每个元素为 dict，
+                           包含 "action" 和 "next_state" 两个键
+        situation:         当前状态文本（state_si.current_state）
+        expert_action:     专家动作文本（expert_action_ai）
         expert_next_state: 专家动作执行后的后继状态 s_{i+1}
 
     返回:
         填充完毕的 prompt 字符串
     """
-    situation = rollout_item["state_si"]["current_state"].strip()
-    expert_action = rollout_item["expert_action_ai"].strip()
-    alt_action = rollout_item["alternative_action_j"].strip()
-    alt_next_state = rollout_item["next_state_sji"].strip()
-
-    # 填充模板主要占位符
-    prompt = template.replace("{Situation Description}", situation)
-    prompt = prompt.replace("{Expert Action}", expert_action)
+    prompt = template.replace("{Situation Description}", situation.strip())
+    prompt = prompt.replace("{Expert Action}", expert_action.strip())
     prompt = prompt.replace("{Future State of Expert Action}", expert_next_state.strip())
-    prompt = prompt.replace("{Alt Action 1}", alt_action)
-    prompt = prompt.replace("{State 1}", alt_next_state)
 
-    # 当前每条记录只有一个替代动作，移除模板中多余的占位符行
-    lines = prompt.splitlines()
-    cleaned: list = []
-    for line in lines:
-        # 跳过包含未填充占位符的行（如 {Alt Action 2}、{State 2}）
-        if "{Alt Action 2}" in line or "{State 2}" in line:
-            continue
-        # 跳过省略号行（模板中的 "3. . . ."）
-        if line.strip() in ("3. . . .", "3. ...", "..."):
-            continue
-        cleaned.append(line)
+    # 填充 3 个替代动作占位符
+    for k, alt in enumerate(alternatives, start=1):
+        prompt = prompt.replace(f"{{Alt Action {k}}}", alt["action"].strip())
+        prompt = prompt.replace(f"{{State {k}}}", alt["next_state"].strip())
 
-    return "\n".join(cleaned).strip()
+    return prompt.strip()
 
 
 # --------------------------------------------------------------------------- #
@@ -313,9 +309,10 @@ def generate_d_refl(
     流程：
         1. 加载 D_rollout.json 和 dexpert 专家轨迹
         2. 构建专家后继状态索引（task_id, step） -> s_{i+1}
-        3. 为每条 rollout 记录构建 prompt
-        4. 使用线程池并发调用强模型 API 生成反思文本（由 max_workers 控制并发数）
-        5. 保存结果到 D_refl.json
+        3. 按 (task_id, step) 将 D_rollout 记录分组（每步 3 条替代动作）
+        4. 为每个分组构建 prompt（一次性填入 3 个替代动作）
+        5. 使用线程池并发调用强模型 API 生成反思文本（由 max_workers 控制并发数）
+        6. 保存结果到 D_refl.json（每步一条记录）
 
     参数:
         rollout_file: D_rollout.json 的路径
@@ -353,6 +350,21 @@ def generate_d_refl(
     logger.info("共 %d 条 rollout 记录", len(rollout_data))
 
     # ------------------------------------------------------------------ #
+    #  按 (task_id, step) 将 D_rollout 记录分组（每步 3 条替代动作）
+    # ------------------------------------------------------------------ #
+    groups: dict = defaultdict(list)
+    for item in rollout_data:
+        groups[(item["task_id"], item["step"])].append(item)
+
+    # 按首条记录的 idx 排序，确保输出顺序稳定
+    sorted_group_keys = sorted(groups.keys(), key=lambda k: groups[k][0]["idx"])
+
+    logger.info(
+        "按 (task_id, step) 分组完毕：共 %d 个步骤分组，每组 3 个替代动作",
+        len(sorted_group_keys),
+    )
+
+    # ------------------------------------------------------------------ #
     #  构建专家后继状态索引（从 dexpert 获取 Expected Outcome si+1）
     # ------------------------------------------------------------------ #
     if not os.path.exists(dexpert_file):
@@ -380,7 +392,7 @@ def generate_d_refl(
     if resume and os.path.exists(output_file):
         try:
             results = load_json(output_file)
-            done_ids = {r["id"] for r in results if r.get("reflection_j")}
+            done_ids = {r["id"] for r in results if r.get("reflection")}
             logger.info("断点续传：已完成 %d 条，跳过...", len(done_ids))
         except Exception:
             logger.warning("无法加载已有结果文件，从头开始")
@@ -391,51 +403,78 @@ def generate_d_refl(
     #  并发生成反思文本（使用线程池，由 max_workers 控制并发数）
     # ------------------------------------------------------------------ #
     skipped_no_next_state = 0
-    # 收集待处理条目（跳过已完成的）
     pending: list = []
-    for item in rollout_data:
-        entry_id = item.get("id", "")
-        if entry_id in done_ids:
-            logger.debug("跳过已完成条目: %s", entry_id)
+
+    for group_key in sorted_group_keys:
+        items = groups[group_key]
+        task_id, step = group_key
+        # 组级 ID：去掉 rollout 后缀，使用步骤级标识
+        first = items[0]
+        group_id = first["id"].rsplit("_rollout", 1)[0]
+
+        if group_id in done_ids:
+            logger.debug("跳过已完成分组: %s", group_id)
             continue
 
         # 从 dexpert 索引中查找专家后继状态 s_{i+1}（prompt 中的 Expected Outcome）。
         # 轨迹最后一步在索引中固定为 "success"，中间步骤取下一步的 state_si。
-        # 注意：{State 1}（next_state_sji）始终来自 D_rollout，与此处无关，不受最后一步影响。
-        task_id = item["task_id"]
-        step = item["step"]
         expert_next = expert_next_index.get((task_id, step))
         if expert_next is None:
             logger.warning(
-                "条目 %s 找不到专家后继状态（task_id=%s, step=%d），使用占位文本",
-                entry_id, item.get("task_id", ""), item.get("step", -1),
+                "分组 %s 找不到专家后继状态（task_id=%s, step=%d），使用占位文本",
+                group_id, task_id, step,
             )
             expert_next = (
                 "[Expert action leads to task completion / no further state recorded]"
             )
             skipped_no_next_state += 1
 
-        prompt = build_prompt(TEMPLATE, item, expert_next)
-        pending.append((item, expert_next, prompt))
+        # 构建 3 个替代动作列表（按 rollout 编号排序以保证顺序稳定）
+        sorted_items = sorted(items, key=lambda x: x["id"])
+        alternatives = [
+            {
+                "action": it["alternative_action_j"],
+                "next_state": it["next_state_sji"],
+            }
+            for it in sorted_items
+        ]
 
-    logger.info("待生成条目数: %d，并发线程数: %d", len(pending), max_workers)
+        situation = first["state_si"]["current_state"]
+        expert_action = first["expert_action_ai"]
 
-    # 使用字典按 id 存储结果，保证最终顺序与 D_rollout 原始顺序一致
+        prompt = build_prompt(
+            TEMPLATE, alternatives, situation, expert_action, expert_next
+        )
+        pending.append({
+            "group_id": group_id,
+            "task_id": task_id,
+            "idx": first["idx"],
+            "task": first["task"],
+            "step": step,
+            "state_si": first["state_si"],
+            "expert_action_ai": expert_action,
+            "alternatives": alternatives,
+            "expert_next": expert_next,
+            "prompt": prompt,
+            "gamefile": first.get("gamefile", []),
+        })
+
+    logger.info("待生成分组数: %d，并发线程数: %d", len(pending), max_workers)
+
+    # 使用字典按 group_id 存储结果
     result_map: dict = {r["id"]: r for r in results}
     completed_count = len(results)
     total_count = len(results) + len(pending)
 
-    def _call_one(args):
-        """单条并发调用任务（供线程池使用）。"""
-        item, expert_next, prompt = args
-        entry_id = item.get("id", "")
-        step = item["step"]
+    def _call_one(group_info: dict):
+        """单组并发调用任务（供线程池使用）。"""
+        gid = group_info["group_id"]
         logger.info(
             "生成反思: id=%s, task=%s, step=%d",
-            entry_id, item.get("task", "")[:50], step,
+            gid, group_info["task"][:50], group_info["step"],
         )
         text = call_llm_api(
-            prompt=prompt,
+            prompt=group_info["prompt"],
             client=client,
             model=model,
             max_tokens=max_tokens,
@@ -444,49 +483,55 @@ def generate_d_refl(
             retry_delay=retry_delay,
         )
         if text is None:
-            logger.warning("条目 %s API 调用失败，reflection_j 置为空字符串", entry_id)
+            logger.warning("分组 %s API 调用失败，reflection 置为空字符串", gid)
             text = ""
         entry = {
-            "task_id": item["task_id"],
-            "idx": item["idx"],
-            "id": entry_id,
-            "task": item["task"],
-            "step": step,
-            "state_si": item["state_si"],
-            "alternative_action_j": item["alternative_action_j"],
-            "reflection_j": text,
-            "gamefile": item.get("gamefile", []),
+            "task_id": group_info["task_id"],
+            "idx": group_info["idx"],
+            "id": gid,
+            "task": group_info["task"],
+            "step": group_info["step"],
+            "state_si": group_info["state_si"],
+            "expert_action_ai": group_info["expert_action_ai"],
+            "alternative_actions": group_info["alternatives"],
+            "reflection": text,
+            "gamefile": group_info["gamefile"],
         }
-        return entry_id, entry
+        return gid, entry
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_map = {executor.submit(_call_one, args): args[0]["id"] for args in pending}
+        future_map = {
+            executor.submit(_call_one, g): g["group_id"] for g in pending
+        }
         for future in as_completed(future_map):
             try:
-                entry_id, entry = future.result()
+                gid, entry = future.result()
             except Exception:
                 fid = future_map.get(future, "<unknown>")
-                logger.error("条目 %s 处理时发生异常，跳过", fid, exc_info=True)
+                logger.error("分组 %s 处理时发生异常，跳过", fid, exc_info=True)
                 continue
-            result_map[entry_id] = entry
+            result_map[gid] = entry
             completed_count += 1
             # 每完成 10 条自动保存一次（防止意外中断丢失进度）
             if completed_count % 10 == 0:
-                ordered = [result_map[it.get("id", "")] for it in rollout_data
-                           if it.get("id", "") in result_map]
+                ordered = list(result_map.values())
+                ordered.sort(key=lambda r: r.get("idx", 0))
                 save_json(ordered, output_file)
-                logger.info("自动保存进度：已完成 %d/%d 条", completed_count, total_count)
+                logger.info(
+                    "自动保存进度：已完成 %d/%d 条",
+                    completed_count, total_count,
+                )
 
-    # 按 D_rollout 原始顺序排列最终结果
-    results = [result_map[item.get("id", "")] for item in rollout_data
-               if item.get("id", "") in result_map]
+    # 按 idx 排序最终结果
+    results = sorted(result_map.values(), key=lambda r: r.get("idx", 0))
 
     # ------------------------------------------------------------------ #
     #  最终保存
     # ------------------------------------------------------------------ #
     save_json(results, output_file)
     logger.info(
-        "D_refl 生成完毕。共 %d 条反思数据，%d 条因找不到专家后继状态使用占位文本",
+        "D_refl 生成完毕。共 %d 条反思数据（每条含 3 个替代动作），"
+        "%d 条因找不到专家后继状态使用占位文本",
         len(results), skipped_no_next_state,
     )
     return results
