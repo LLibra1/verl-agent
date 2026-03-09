@@ -352,12 +352,12 @@ def generate_d_refl(
     # ------------------------------------------------------------------ #
     #  按 (task_id, step) 将 D_rollout 记录分组（每步 3 条替代动作）
     # ------------------------------------------------------------------ #
-    groups: dict = defaultdict(list)
+    step_groups: dict = defaultdict(list)
     for item in rollout_data:
-        groups[(item["task_id"], item["step"])].append(item)
+        step_groups[(item["task_id"], item["step"])].append(item)
 
     # 按首条记录的 idx 排序，确保输出顺序稳定
-    sorted_group_keys = sorted(groups.keys(), key=lambda k: groups[k][0]["idx"])
+    sorted_group_keys = sorted(step_groups.keys(), key=lambda k: step_groups[k][0]["idx"])
 
     logger.info(
         "按 (task_id, step) 分组完毕：共 %d 个步骤分组，每组 3 个替代动作",
@@ -406,7 +406,7 @@ def generate_d_refl(
     pending: list = []
 
     for group_key in sorted_group_keys:
-        items = groups[group_key]
+        items = step_groups[group_key]
         task_id, step = group_key
         # 组级 ID：去掉 rollout 后缀，使用步骤级标识
         first = items[0]
@@ -514,8 +514,7 @@ def generate_d_refl(
             completed_count += 1
             # 每完成 10 条自动保存一次（防止意外中断丢失进度）
             if completed_count % 10 == 0:
-                ordered = list(result_map.values())
-                ordered.sort(key=lambda r: r.get("idx", 0))
+                ordered = sorted(result_map.values(), key=lambda r: r.get("idx", 0))
                 save_json(ordered, output_file)
                 logger.info(
                     "自动保存进度：已完成 %d/%d 条",
