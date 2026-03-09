@@ -274,8 +274,7 @@ python3 agent_system/environments/env_package/alfworld/data_generation/D_reflect
 | `{State 1}` | 第 1 个替代动作的后继状态（`alternative_actions[0].next_state`） |
 | `{Alt Action 2}` | 第 2 个替代动作（`alternative_actions[1].action`） |
 | `{State 2}` | 第 2 个替代动作的后继状态（`alternative_actions[1].next_state`） |
-| `{Alt Action 3}` | 第 3 个替代动作（`alternative_actions[2].action`） |
-| `{State 3}` | 第 3 个替代动作的后继状态（`alternative_actions[2].next_state`） |
+| `3. . . .`（省略号行） | 脚本将此行替换为第 3 个替代动作的完整格式化文本（`alternative_actions[2]`） |
 
 ---
 
