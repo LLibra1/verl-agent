@@ -210,12 +210,15 @@ def build_prompt(
         prompt = prompt.replace(f"{{State {k}}}", alt["next_state"].strip())
 
     # 模板中第 3 个替代动作以省略号 "3. . . ." 表示，
-    # 将其替换为与前两行格式一致的第 3 个替代动作文本
+    # 将其替换为与前两行格式一致的第 3 个替代动作文本。
+    # 注意：双空格 "a3  i" / "s3  i" 与模板中 "a1  i" / "s1  i" 的格式保持一致
+    # （源自论文中 LaTeX 下标记号 $a_i^3$ 的文本化表示）。
     alt3 = alternatives[2]
     alt3_line = (
         f"  3. Action a3  i : {alt3['action'].strip()}, "
         f"resulting state s3  i : {alt3['next_state'].strip()} "
     )
+    # 模板中省略号行精确为 "  3. . . .  "（2 前导空格 + 内容 + 2 尾随空格）
     prompt = prompt.replace("  3. . . .  ", alt3_line)
 
     return prompt.strip()
