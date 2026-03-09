@@ -54,7 +54,7 @@ reflection_prompt.py  ───────────────────�
 ```
 D_reflection/
 ├── __init__.py                  # 包初始化文件
-├── reflection_prompt.py         # 反思 prompt 模板（ALFWORLD_TEMPLATE）
+├── reflection_prompt.py         # 反思 prompt 模板（REFLECTION_TEMPLATE）
 ├── generate_d_refl.py           # 主生成脚本
 ├── run_generate_d_refl.sh       # Shell 一键执行脚本
 ├── D_refl.json                  # 生成的反思数据（运行后自动创建）
@@ -227,7 +227,7 @@ python3 agent_system/environments/env_package/alfworld/data_generation/D_reflect
 - 加载 `D_rollout.json` 和 `dexpert_test_100.json`（路径已内置，无需命令行参数）
 - 按 `(task_id, step)` 将 D_rollout 记录分组（每步 3 条替代动作）
 - 为每个分组从专家轨迹中推导出专家后继状态 s_{i+1}
-- 将 `reflection_prompt.py` 中的 `ALFWORLD_TEMPLATE` 一次性填入 3 个替代动作并调用强模型 API
+- 将 `reflection_prompt.py` 中的 `REFLECTION_TEMPLATE` 一次性填入 3 个替代动作并调用强模型 API
 - 支持**断点续传**：中断后重新运行自动跳过已完成条目
 - 每 10 条自动保存一次进度，防止意外中断丢失数据
 
@@ -263,7 +263,7 @@ python3 agent_system/environments/env_package/alfworld/data_generation/D_reflect
 
 ### reflection_prompt.py（反思 prompt 模板）
 
-定义了 `ALFWORLD_TEMPLATE`，包含以下占位符（由脚本自动填充）：
+定义了 `REFLECTION_TEMPLATE`，包含以下占位符（由脚本自动填充）：
 
 | 占位符 | 对应字段 |
 |--------|---------|
@@ -274,7 +274,8 @@ python3 agent_system/environments/env_package/alfworld/data_generation/D_reflect
 | `{State 1}` | 第 1 个替代动作的后继状态（`alternative_actions[0].next_state`） |
 | `{Alt Action 2}` | 第 2 个替代动作（`alternative_actions[1].action`） |
 | `{State 2}` | 第 2 个替代动作的后继状态（`alternative_actions[1].next_state`） |
-| `3. . . .`（省略号行） | 脚本将此行替换为第 3 个替代动作的完整格式化文本（`alternative_actions[2]`） |
+| `{Alt Action 3}` | 第 3 个替代动作（`alternative_actions[2].action`） |
+| `{State 3}` | 第 3 个替代动作的后继状态（`alternative_actions[2].next_state`） |
 
 ---
 

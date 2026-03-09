@@ -172,24 +172,17 @@ def build_prompt(
     将同一步骤的 3 个替代动作及其他字段填入 prompt 模板。
 
     D_rollout 中每步包含 3 条记录（rollout001~003），按 (task_id, step) 分组后，
-    3 个替代动作一次性填入模板。
-
-    模板中 {Alt Action 1}/{State 1} 和 {Alt Action 2}/{State 2} 为显式占位符，
-    而第 3 个替代动作在模板中以省略号 "3. . . ." 表示，需在代码中将其替换为
-    格式化后的第 3 个替代动作文本。
+    3 个替代动作一次性填入模板的 {Alt Action 1}~{Alt Action 3} 占位符。
 
     模板占位符与字段的对应关系：
         {Situation Description}          <- state_si.current_state
         {Expert Action}                  <- expert_action_ai
         {Future State of Expert Action}  <- expert_next_state（由 dexpert 推导）
-        {Alt Action 1}                   <- alternatives[0]["action"]
-        {State 1}                        <- alternatives[0]["next_state"]
-        {Alt Action 2}                   <- alternatives[1]["action"]
-        {State 2}                        <- alternatives[1]["next_state"]
-        "3. . . ."                       <- 替换为第 3 个替代动作的完整格式化文本
+        {Alt Action k}                   <- 第 k 个替代动作（k=1,2,3）
+        {State k}                        <- 第 k 个替代动作的后继状态（k=1,2,3）
 
     参数:
-        template:          ALFWORLD_TEMPLATE 字符串
+        template:          REFLECTION_TEMPLATE 字符串
         alternatives:      长度为 3 的列表，每个元素为 dict，
                            包含 "action" 和 "next_state" 两个键
         situation:         当前状态文本（state_si.current_state）
@@ -203,23 +196,11 @@ def build_prompt(
     prompt = prompt.replace("{Expert Action}", expert_action.strip())
     prompt = prompt.replace("{Future State of Expert Action}", expert_next_state.strip())
 
-    # 填充前 2 个替代动作的显式占位符 {Alt Action k} 和 {State k}
-    for k in range(1, 3):
+    # 填充 3 个替代动作的占位符 {Alt Action k} 和 {State k}
+    for k in range(1, 4):
         alt = alternatives[k - 1]
         prompt = prompt.replace(f"{{Alt Action {k}}}", alt["action"].strip())
         prompt = prompt.replace(f"{{State {k}}}", alt["next_state"].strip())
-
-    # 模板中第 3 个替代动作以省略号 "3. . . ." 表示，
-    # 将其替换为与前两行格式一致的第 3 个替代动作文本。
-    # 注意：双空格 "a3  i" / "s3  i" 与模板中 "a1  i" / "s1  i" 的格式保持一致
-    # （源自论文中 LaTeX 下标记号 $a_i^3$ 的文本化表示）。
-    alt3 = alternatives[2]
-    alt3_line = (
-        f"  3. Action a3  i : {alt3['action'].strip()}, "
-        f"resulting state s3  i : {alt3['next_state'].strip()} "
-    )
-    # 模板中省略号行精确为 "  3. . . .  "（2 前导空格 + 内容 + 2 尾随空格）
-    prompt = prompt.replace("  3. . . .  ", alt3_line)
 
     return prompt.strip()
 
@@ -360,7 +341,7 @@ def generate_d_refl(
     spec = importlib.util.spec_from_file_location("reflection_prompt", _prompt_path)
     reflection_module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(reflection_module)
-    TEMPLATE = reflection_module.ALFWORLD_TEMPLATE
+    TEMPLATE = reflection_module.REFLECTION_TEMPLATE
 
     # ------------------------------------------------------------------ #
     #  加载数据
