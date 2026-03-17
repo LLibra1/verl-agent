@@ -440,6 +440,15 @@ def generate_d_refl(
             for it in sorted_items
         ]
 
+        # 校验：模板中有 3 个占位符（{Alt Action 1/2/3}），
+        # 分组记录不足 3 条时 build_prompt 会触发 IndexError，需跳过。
+        if len(alternatives) != 3:
+            logger.warning(
+                "分组 %s 包含 %d 条替代动作（期望 3 条），跳过",
+                group_id, len(alternatives),
+            )
+            continue
+
         situation = first["state_si"]["current_state"]
         expert_action = first["expert_action_ai"]
 
