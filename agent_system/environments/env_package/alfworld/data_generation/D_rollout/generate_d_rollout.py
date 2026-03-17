@@ -726,7 +726,7 @@ def main():
     logging.info(f"从专家文件生成了 {len(all_d_rollout_entries)} 条 rollout 条目")
     
     # 保存 D_rollout 数据集（JSON 格式，不是 JSONL）
-    output_file = os.path.join(args.output_dir, 'D_rollout_0_100_llama.json')
+    output_file = os.path.join(args.output_dir, 'D_rollout.json')
     logging.info(f"\n将 D_rollout 数据集保存到 {output_file}...")
     
     with open(output_file, 'w', encoding='utf-8') as f:

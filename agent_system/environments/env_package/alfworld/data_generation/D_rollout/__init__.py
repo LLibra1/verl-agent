@@ -10,7 +10,7 @@ D_rollout 数据集生成模块
 - 数据分析和验证工具
 
 使用方法：
-    python3 -m agent_system.environments.env_package.alfworld.data_generation.generate_d_rollout \
+    python3 -m agent_system.environments.env_package.alfworld.data_generation.D_rollout.generate_d_rollout \
         --expert_file dexpert_test.json \
         --k 3 \
         --output_dir data/d_rollout
