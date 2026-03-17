@@ -90,7 +90,9 @@ def compute_basic_statistics(data: List[Dict]) -> Dict:
     # 如果可用，添加任务级别统计信息
     if any('task_id' in entry for entry in data):
         stats['unique_tasks'] = len(set(entry.get('task_id', '') for entry in data))
-        stats['unique_trajectories'] = len(set(entry.get('idx', -1) for entry in data))
+        # idx 在 D_rollout 中是全局唯一的条目计数器（每条 rollout 一个），
+        # 而非轨迹编号。用 unique_entry_idx_count 更准确反映含义。
+        stats['unique_entry_idx_count'] = len(set(entry.get('idx', -1) for entry in data))
     
     return stats
 

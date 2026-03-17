@@ -66,7 +66,11 @@ def validate_data_format(data: List[Dict]) -> Dict:
     ]
     
     issues = []
+    # 预初始化所有必需字段的计数器为 0，
+    # 确保完全缺失的字段也能在 field_coverage 报告中正确显示。
     field_presence = defaultdict(int)
+    for field in required_fields:
+        field_presence[field] = 0
     
     for i, entry in enumerate(data):
         # 检查必需字段
@@ -259,10 +263,18 @@ def validate_with_environment(
             expected_next_state = entry['next_state_sji']
             
             # 获取同一轨迹的所有步骤（用于回放）
-            traj_entries = sorted(
+            # 注意：D_rollout 中每步有 K 条记录（rollout001~003），需要按 step 去重，
+            # 否则同一步骤的专家动作会被重复回放多次，导致环境状态错误。
+            traj_entries_all = sorted(
                 [e for e in data if e['task_id'] == task_id and e['idx'] <= entry['idx']],
                 key=lambda x: x['step']
             )
+            seen_steps = set()
+            traj_entries = []
+            for te in traj_entries_all:
+                if te['step'] not in seen_steps:
+                    seen_steps.add(te['step'])
+                    traj_entries.append(te)
             
             # 如果无法获取完整轨迹，跳过
             if not traj_entries:
