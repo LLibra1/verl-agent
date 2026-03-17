@@ -274,7 +274,15 @@ def call_llm_api(
                 max_tokens=max_tokens,
                 temperature=temperature,
             )
-            return response.choices[0].message.content.strip()
+            content = response.choices[0].message.content
+            if content is None:
+                logger.warning(
+                    "API 返回内容为 None（第 %d/%d 次）", attempt, max_retries,
+                )
+                if attempt < max_retries:
+                    time.sleep(retry_delay)
+                continue
+            return content.strip()
         except Exception as exc:
             logger.warning(
                 "API 调用失败（第 %d/%d 次）: %s", attempt, max_retries, exc
