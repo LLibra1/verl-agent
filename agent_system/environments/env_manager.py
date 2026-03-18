@@ -21,7 +21,7 @@ from functools import partial
 import os
 from agent_system.environments.prompts import *
 from agent_system.environments.base import EnvironmentManagerBase, to_numpy
-from agent_system.memory import SimpleMemory, SearchMemory
+from agent_system.memory import SimpleMemory, ALFWorldMemory, SearchMemory
 from omegaconf import OmegaConf
 
 def parse_gamefile(infos):
@@ -132,7 +132,7 @@ class SearchEnvironmentManager(EnvironmentManagerBase):
 
 class AlfWorldEnvironmentManager(EnvironmentManagerBase):
     def __init__(self, envs, projection_f, config):
-        self.memory = SimpleMemory()
+        self.memory = ALFWorldMemory()
         super().__init__(envs, projection_f, config)
     
     def reset(self, kwargs):
